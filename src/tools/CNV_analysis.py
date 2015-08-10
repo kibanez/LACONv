@@ -1,0 +1,329 @@
+'''
+Created on 02/06/14
+
+@author: kibanez
+'''
+
+#!/usr/bin/python
+
+import sys, re, shlex , os, string, urllib, time, math, random, subprocess, shutil
+
+from multiprocessing import Process, Manager
+
+import inspect
+
+from itertools import izip_longest,groupby
+
+from operator import itemgetter
+
+import ConfigParser
+
+from os import path as osp
+
+import optparse
+
+from os import path as osp
+
+localModulesBase = osp.dirname(osp.realpath(__file__))
+
+
+modulesRelDirs = ["../modules/"]
+
+for moduleRelDir in modulesRelDirs:
+        sys.path.insert(0,osp.join(localModulesBase,moduleRelDir))
+        
+
+
+from mod_CoverageControl import c_CoverageControl
+import mod_CNV 
+import logging
+
+import numpy
+
+
+######################################################################
+
+class OptionParser(optparse.OptionParser):
+
+    def check_required (self, opt):
+
+        option = self.get_option(opt)
+
+        atrib = getattr(self.values, option.dest)
+        
+        if atrib is None:
+#            self.error("%s option not supplied" % option)
+            return False
+        else:
+            return True
+            
+#######################################################################
+            
+def clean_bed(bed_file,alignment_path):
+    bed_name = bed_file.split('/')
+    bed_name = bed_name[len(bed_name) - 1]
+    
+    bedName, bedExtension = os.path.splitext(bed_name)
+    
+    new_analysis_bed = bedName + "_reheadered" + bedExtension
+    
+    new_analysis_bed_path = alignment_path + "/" + new_analysis_bed
+    aux = alignment_path + "/" + "aux.bed" 
+    
+    iOutFile = open(new_analysis_bed_path,"w")
+    iOutFile2 = open(aux,"w")
+    os.system("grep -e '^chr[[:upper:]]' -e '^chr[[:digit:]][[:blank:]]' -e '^chr[[:digit:]][[:digit:]][[:blank:]]' %s > %s" %(bed_file,aux))
+    os.system("sort -k1,1V %s > %s" %(aux,new_analysis_bed_path))
+    iOutFile.close()
+    iOutFile2.close()
+
+    return new_analysis_bed_path
+    os.remove(aux)
+
+
+######################################################################
+
+def read_cfg_file(cfg_filename):
+    
+    fi = open(cfg_filename,'r')
+    
+    config = ConfigParser.ConfigParser()
+    config.readfp(fi)
+    
+    hash_cfg = {}
+        
+    for field in config.options('GENERAL'):
+        hash_cfg[field] = config.get('GENERAL',field)
+    
+    for field in config.options('SAMPLES'):
+        hash_cfg[field] = config.get('SAMPLES',field)
+        
+    for field in config.options('REFERENCE'):
+        hash_cfg[field] = config.get('REFERENCE',field)
+    
+    for field in config.options('OUTPUT'):
+        hash_cfg[field] = config.get('OUTPUT',field)
+     
+    for field in config.options('BDs'):
+        hash_cfg[field] = config.get('BDs',field)
+        
+    for field in config.options('SOFTWARE'):
+        hash_cfg[field] = config.get('SOFTWARE',field)
+        
+    for field in config.options('BOWTIE2'):
+        hash_cfg[field] = config.get('BOWTIE2',field)
+        
+    fi.close()
+    
+    return hash_cfg
+
+#######################################################################
+
+def parse_coverage(f_cov):
+    
+    #Sample_id    Gene    Refseq    Exon    Chr    Exon Start    Exon End    Exon length    Avg_Coverage    % Coverage < 5    % Coverage 5-10    % Coverage 10-15    % Coverage 15-20    % Coverage < 20
+    
+    hash_table = {}
+    
+    fi = open(f_cov,'r')
+    
+    l_lines = map(lambda l: l.strip().split('\t') , fi.readlines())[1:]
+    map(lambda (i,(sample,gene,transc,exon,chr,start,end,len,avg_cov,cov_5,cov_5_10,cov_10_15,cov_15_20,cov_less_20)): hash_table.setdefault((i,gene,transc,exon,chr,start,end),[]).append([sample,float(avg_cov.replace(',','.')),float(cov_less_20.replace(',','.'))]), enumerate(l_lines))
+    
+    fi.close()
+    
+    return hash_table
+
+#######################################################################
+# cleans the bed file, removing lines where different things apart from "chr start end" appear
+
+def clean_bed(bed_file,alignment_path):
+    bed_name = bed_file.split('/')
+    bed_name = bed_name[len(bed_name) - 1]
+    
+    bedName, bedExtension = os.path.splitext(bed_name)
+    
+    new_analysis_bed = bedName + "_reheadered" + bedExtension
+    
+    new_analysis_bed_path = alignment_path + "/" + new_analysis_bed
+    aux = alignment_path + "/" + "aux.bed"
+    aux2 = alignment_path + "/" + "aux2.bed"  
+    
+    iOutFile = open(new_analysis_bed_path,"w")
+    iOutFile2 = open(aux,"w")
+    # we conserve all those lines with the following info: chr \t start \t end
+    os.system("grep -e '^chr[[:upper:]]' -e '^chr[[:digit:]][[:blank:]]' -e '^chr[[:digit:]][[:digit:]][[:blank:]]' %s > %s" %(bed_file,aux))
+    # we remove "chrM" lines if they appear 
+    os.system("grep -v '^chrM' %s > %s" %(aux,aux2))
+    os.system("sort -k1,1V %s > %s" %(aux2,new_analysis_bed_path))
+    iOutFile.close()
+    iOutFile2.close()
+
+    os.remove(aux)
+    os.remove(aux2)
+    return new_analysis_bed_path
+
+
+#######################################################################
+
+def run(argv=None):
+    
+    if argv is None: argv = sys.argv    
+   
+    parser = OptionParser(add_help_option=True,description="The script performs CNV estimation within the regions of interest")
+    
+    #parser.add_option("--i",default=None,help="Input BAM mapped files (A bunch of files must be separated by \';\')",dest="f_bam")
+    #parser.add_option("--l",default=None,help="Input file with a the list of BAM mapped files",dest="list_files")
+    #parser.add_option("--b",default=None,help="Bed file that specifies the regions of interest (required)",dest="f_bed")
+    #parser.add_option("--o",default=None,help="CNV output folder (required)",dest="f_output")
+    parser.add_option("--cfg",default=None,help="Config file with the complete information of the target regions and paths of the files needed for the calling",dest="f_cfg")
+
+                    
+    # Se leen las opciones aportadas por el usuario
+    (options, args) = parser.parse_args(argv[1:])
+
+    if len(argv) == 1:
+        sys.exit(0)
+    
+    if not parser.check_required("--cfg"):
+        raise IOError('The cfg file does not exist')
+        
+               
+    try:
+        
+        if options.f_cfg <> None:
+            
+            cfg_file = options.f_cfg        
+          
+            if not os.path.exists(cfg_file):
+                raise IOError('The file %s does not exist' % (cfg_file))
+            
+            hash_cfg = read_cfg_file(cfg_file)
+# ref_fasta,fasta_cnv_path,gatk_path,cnv_output_path,l_gender,panel_id,window_length)            
+
+            cnv_output_path = hash_cfg.get('cnv_path','')
+            controlCoverage_path = hash_cfg.get('coverage_path','')
+            alignment_path  = hash_cfg.get('alignment_path','')
+            ref_fasta = hash_cfg.get('ref_fasta','')
+            fasta_cnv_path = hash_cfg.get('ref_fasta_cnv','')
+            gatk_path = hash_cfg.get('gatk_path','')
+            analysis_bed = hash_cfg.get('analysis_bed','')
+            l_samples  = hash_cfg.get("sample_names",'').split(',')
+            l_ids = hash_cfg.get("sample_ids",'').split(',')
+            l_gender = hash_cfg.get("sample_gender",'').split(',')
+            panel_id = hash_cfg.get("panel_id",'')
+            window_length = hash_cfg.get("window_length",'')
+            control_cnv = hash_cfg.get("control_cnv",'')
+            annotation_file = hash_cfg.get("annotation_file",'')
+            
+            
+            if (panel_id == ""):
+                raise IOError('The panel_id is not given. Please check the cfg file %s' % (panel_id))
+   
+            if not os.path.exists(alignment_path):
+                raise IOError('The path does not exist. %s' % (alignment_path))
+           
+            if not os.path.isfile(ref_fasta):
+                raise IOError('The file does not exist. %s' % (ref_fasta))
+            
+            if not os.path.isfile(fasta_cnv_path):
+                raise IOError('The file does not exist. %s' % (fasta_cnv_path))
+            
+            if not os.path.exists(controlCoverage_path):
+                raise IOError('The path does not exist. %s') % (controlCoverage_path)
+            
+            if not os.path.exists(cnv_output_path):
+                os.mkdir(cnv_output_path)
+
+            if not os.path.isfile(gatk_path):
+                raise IOError('The file does not exist. %s' % (gatk_path))
+            
+            if not os.path.isfile(analysis_bed):
+                raise IOError('The file does not exist. %s' % (analysis_bed))
+
+            
+            if not os.path.exists(control_cnv):
+                raise IOError("The path control_cnv does not exist. %s" % (control_cnv))
+            
+            if not os.path.isfile(annotation_file):
+                raise IOError("annotation_file not exist. %s" % (annotation_file))
+
+
+            
+            l_bams = []
+            for i,item in enumerate(l_ids):            
+                aux_path = os.path.join(alignment_path,item)    
+                ##aux_path = aux_path + ".bam" # (para random CNV)
+                l_bams.append(os.path.join(aux_path,item + "_" + l_samples[i] + "_align.realign.recal.bam"))
+                
+                
+            print l_bams
+    
+            #Configure logger
+            formatter = logging.Formatter('%(asctime)s - %(module)s - %(levelname)s - %(message)s')
+            console = logging.StreamHandler()
+            console.setFormatter(formatter)
+            console.setLevel(logging.INFO)
+            logger = logging.getLogger("preprocess")
+            logger.setLevel(logging.INFO)
+            logger.addHandler(console)
+            
+    
+            logger.info("Bed generation")
+            new_analysis_bed_path = clean_bed(analysis_bed,alignment_path)
+            
+            # before calling for CNV, it is necessary to create GATK coverage files , normalize them and do the estimation CNV 
+            
+            # 1 - GATK coverage average calling            
+            cov_control = c_CoverageControl(l_bams,l_samples,l_ids)
+            cov_control.set_bed_analysis(new_analysis_bed_path)            
+            
+            # all the files are generated in coverage/files directory
+            path_files = os.path.join(controlCoverage_path,"files") 
+            if not os.path.exists(path_files):
+                    os.mkdir(path_files)            
+            
+            logger.info("Starting Coverage Control...")
+            cov_output = cov_control.perform_coverage_control_gatk(path_files,gatk_path,ref_fasta)
+                    
+            # 2 - Normalization and 3 - CNV estimation calling (via mod_CNV)
+            
+            #### l_covFiles (*.sample_interval_summary estan en coverage_path/files)
+            #### self.l_samples[index] + "_" + self.l_ids[index] +  "_GATKcoverage" + ".sample_interval_summary"
+            
+            l_covFiles = []
+            for i in cov_output:
+                aux = i + ".sample_interval_summary"
+                l_covFiles.append(aux)
+    
+            
+            aux1 = filter(lambda x:'H' in x, l_gender)
+            aux2 = filter(lambda x:'M' in x, l_gender)
+            aux3 = filter(lambda x:'X' in x, l_gender)
+             
+            if (len(aux1) + len(aux2) + len(aux3) == len(l_gender)):
+                
+                logger.info("CNV estimation starts")
+                print l_gender
+                cnv_estimation = mod_CNV.mod_CNV(l_covFiles,ref_fasta,fasta_cnv_path,gatk_path,cnv_output_path,l_gender,panel_id,annotation_file,control_cnv,window_length,0,0)
+                cnv_estimation.set_bed_analysis(new_analysis_bed_path)
+                cnv_estimation.perform_cnv()
+             
+            else:
+                 
+                raise IOError('The gender list must have only M (xx) or H (xy) or X (unknown) characters. Please review the cfg file.')
+            
+            
+            logger.info("CNV estimation done! ")    
+        
+    except:
+        print >> sys.stderr , '\n%s\t%s' % (sys.exc_info()[0],sys.exc_info()[1])
+        sys.exit(2)
+
+############################################################################333
+
+if __name__=='__main__':
+    
+    run()
+
+
