@@ -18,8 +18,6 @@ from operator import itemgetter
 
 import ConfigParser
 
-from os import path as osp
-
 import optparse
 
 from os import path as osp
@@ -27,15 +25,16 @@ from os import path as osp
 localModulesBase = osp.dirname(osp.realpath(__file__))
 
 
-modulesRelDirs = ["../modules/"]
+modulesRelDirs = ["modules/"]
 
 for moduleRelDir in modulesRelDirs:
-        sys.path.insert(0,osp.join(localModulesBase,moduleRelDir))
+    sys.path.insert(0,osp.join(localModulesBase,moduleRelDir))
         
 
-
 from mod_CoverageControl import c_CoverageControl
+
 import mod_CNV 
+
 import logging
 
 import numpy
@@ -57,29 +56,6 @@ class OptionParser(optparse.OptionParser):
         else:
             return True
             
-#######################################################################
-            
-def clean_bed(bed_file,alignment_path):
-    bed_name = bed_file.split('/')
-    bed_name = bed_name[len(bed_name) - 1]
-    
-    bedName, bedExtension = os.path.splitext(bed_name)
-    
-    new_analysis_bed = bedName + "_reheadered" + bedExtension
-    
-    new_analysis_bed_path = alignment_path + "/" + new_analysis_bed
-    aux = alignment_path + "/" + "aux.bed" 
-    
-    iOutFile = open(new_analysis_bed_path,"w")
-    iOutFile2 = open(aux,"w")
-    os.system("grep -e '^chr[[:upper:]]' -e '^chr[[:digit:]][[:blank:]]' -e '^chr[[:digit:]][[:digit:]][[:blank:]]' %s > %s" %(bed_file,aux))
-    os.system("sort -k1,1V %s > %s" %(aux,new_analysis_bed_path))
-    iOutFile.close()
-    iOutFile2.close()
-
-    return new_analysis_bed_path
-    os.remove(aux)
-
 
 ######################################################################
 
@@ -109,9 +85,6 @@ def read_cfg_file(cfg_filename):
         
     for field in config.options('SOFTWARE'):
         hash_cfg[field] = config.get('SOFTWARE',field)
-        
-    for field in config.options('BOWTIE2'):
-        hash_cfg[field] = config.get('BOWTIE2',field)
         
     fi.close()
     
@@ -172,10 +145,6 @@ def run(argv=None):
    
     parser = OptionParser(add_help_option=True,description="The script performs CNV estimation within the regions of interest")
     
-    #parser.add_option("--i",default=None,help="Input BAM mapped files (A bunch of files must be separated by \';\')",dest="f_bam")
-    #parser.add_option("--l",default=None,help="Input file with a the list of BAM mapped files",dest="list_files")
-    #parser.add_option("--b",default=None,help="Bed file that specifies the regions of interest (required)",dest="f_bed")
-    #parser.add_option("--o",default=None,help="CNV output folder (required)",dest="f_output")
     parser.add_option("--cfg",default=None,help="Config file with the complete information of the target regions and paths of the files needed for the calling",dest="f_cfg")
 
                     
@@ -199,7 +168,7 @@ def run(argv=None):
                 raise IOError('The file %s does not exist' % (cfg_file))
             
             hash_cfg = read_cfg_file(cfg_file)
-# ref_fasta,fasta_cnv_path,gatk_path,cnv_output_path,l_gender,panel_id,window_length)            
+           
 
             cnv_output_path = hash_cfg.get('cnv_path','')
             controlCoverage_path = hash_cfg.get('coverage_path','')
@@ -252,9 +221,9 @@ def run(argv=None):
             
             l_bams = []
             for i,item in enumerate(l_ids):            
-                aux_path = os.path.join(alignment_path,item)    
+                #aux_path = os.path.join(alignment_path,item)    
                 ##aux_path = aux_path + ".bam" # (para random CNV)
-                l_bams.append(os.path.join(aux_path,item + "_" + l_samples[i] + "_align.realign.recal.bam"))
+                l_bams.append(os.path.join(alignment_path,item + "_" + l_samples[i] + "_align.realign.recal.bam"))
                 
                 
             print l_bams

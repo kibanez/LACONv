@@ -309,6 +309,13 @@ case_files <- strsplit(case_files,";")[[1]]
  }
 
 
+ # if index_remove > 0 => remove the file from gender_list
+ if (length(index_remove) > 0){
+	 gender_list = gender_list[-index_remove]
+  	 case_files = case_files[-index_remove]
+ }
+
+
  # we separate the comparation between samples considering sexual chromosomes
  # ACHTUNG ! ALSO before filtering by coverage (!!) 
  chr_list <- sapply(as.character(df.test$Target),separate)
@@ -381,13 +388,6 @@ case_files <- strsplit(case_files,";")[[1]]
 # control_index_norm_avg <- seq(from = 8, to = length(colnames(df.control)), by = 4) 
 # control_values_norm_avg <- cbind(df.control[,control_index_norm_avg])
  
-
-
-
- # if index_remove > 0 => remove the file from gender_list
- if (length(index_remove) > 0){
-	 gender_list = gender_list[-index_remove]
- }
 
 
  for (i in 1:length(case_files)){

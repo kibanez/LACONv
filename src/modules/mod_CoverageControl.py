@@ -61,7 +61,7 @@ class c_CoverageControl:
 
 
     # Creates an output folder (specified in cfg file) and the temporal scratch subfolder as well        
-    def checkOutputFolder(outF):
+    def checkOutputFolder(self,outF):
         print "Creating Output Folder :",
      
         if outF[len(outF)-1] == "/":
@@ -320,8 +320,7 @@ class c_CoverageControl:
         
         
         qual_info.append(unmapped_orig.rstrip())
-        return qual_info
-        
+        return qual_info        
     
   # bedtools genomecov -ibam *.bam -bg  
   # NOTE: when using higher performance CPU: paralelyze !
