@@ -263,8 +263,7 @@ case_files <- as.character(options[1])
 output_path <- as.character(options[2])
 bed_file <- as.character(options[3])
 gender <- as.character(options[4])
-controls <- as.character(options[5])
-annotation.file <- as.character(options[6])
+annotation.file <- as.character(options[5])
 
 options(java.parameters = "-Xmx2000m")
 
@@ -277,11 +276,7 @@ if (!file.exists(bed_file)){
 	write("cnv_estimation_individual R function: bed_file is not given. The bed file is required", stderr())
 }
 
-if (controls != 0){
-	control_files = strsplit(controls,";")[[1]]
-}else{
-	control_files = c()
-}
+control_files = c()
 
 case_files <- strsplit(case_files,";")[[1]]
 

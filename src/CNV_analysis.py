@@ -34,7 +34,6 @@ for moduleRelDir in modulesRelDirs:
 from mod_CoverageControl import c_CoverageControl
 
 import mod_CNV 
-
 import logging
 
 import numpy
@@ -68,12 +67,9 @@ def read_cfg_file(cfg_filename):
     
     hash_cfg = {}
         
-    for field in config.options('GENERAL'):
-        hash_cfg[field] = config.get('GENERAL',field)
+    for field in config.options('INPUT'):
+        hash_cfg[field] = config.get('INPUT',field)
     
-    for field in config.options('SAMPLES'):
-        hash_cfg[field] = config.get('SAMPLES',field)
-        
     for field in config.options('REFERENCE'):
         hash_cfg[field] = config.get('REFERENCE',field)
     
@@ -177,18 +173,12 @@ def run(argv=None):
             fasta_cnv_path = hash_cfg.get('ref_fasta_cnv','')
             gatk_path = hash_cfg.get('gatk_path','')
             analysis_bed = hash_cfg.get('analysis_bed','')
-            l_samples  = hash_cfg.get("sample_names",'').split(',')
-            l_ids = hash_cfg.get("sample_ids",'').split(',')
+            l_samples  = hash_cfg.get("sample_names",'').split(',')            
             l_gender = hash_cfg.get("sample_gender",'').split(',')
-            panel_id = hash_cfg.get("panel_id",'')
             window_length = hash_cfg.get("window_length",'')
-            control_cnv = hash_cfg.get("control_cnv",'')
             annotation_file = hash_cfg.get("annotation_file",'')
             
             
-            if (panel_id == ""):
-                raise IOError('The panel_id is not given. Please check the cfg file %s' % (panel_id))
-   
             if not os.path.exists(alignment_path):
                 raise IOError('The path does not exist. %s' % (alignment_path))
            
@@ -199,7 +189,7 @@ def run(argv=None):
                 raise IOError('The file does not exist. %s' % (fasta_cnv_path))
             
             if not os.path.exists(controlCoverage_path):
-                raise IOError('The path does not exist. %s') % (controlCoverage_path)
+                os.mkdir(controlCoverage_path)
             
             if not os.path.exists(cnv_output_path):
                 os.mkdir(cnv_output_path)
@@ -211,23 +201,11 @@ def run(argv=None):
                 raise IOError('The file does not exist. %s' % (analysis_bed))
 
             
-            if not os.path.exists(control_cnv):
-                raise IOError("The path control_cnv does not exist. %s" % (control_cnv))
-            
             if not os.path.isfile(annotation_file):
                 raise IOError("annotation_file not exist. %s" % (annotation_file))
 
 
-            
-            l_bams = []
-            for i,item in enumerate(l_ids):            
-                #aux_path = os.path.join(alignment_path,item)    
-                ##aux_path = aux_path + ".bam" # (para random CNV)
-                l_bams.append(os.path.join(alignment_path,item + "_" + l_samples[i] + "_align.realign.recal.bam"))
                 
-                
-            print l_bams
-    
             #Configure logger
             formatter = logging.Formatter('%(asctime)s - %(module)s - %(levelname)s - %(message)s')
             console = logging.StreamHandler()
@@ -237,6 +215,16 @@ def run(argv=None):
             logger.setLevel(logging.INFO)
             logger.addHandler(console)
             
+            l_bams = []
+            for bam_f in l_samples:
+                abs_path = os.path.join(alignment_path,bam_f)
+                if not os.path.exists(abs_path):
+                    raise IOError("The bam file does not exist. Check if the introduced path is correct: %s" %(abs_path))
+                else:
+                    l_bams.append(abs_path)
+                
+            logger.info("CNV estimation will be done in the following files: %s \n" %(l_bams))
+            
     
             logger.info("Bed generation")
             new_analysis_bed_path = clean_bed(analysis_bed,alignment_path)
@@ -244,10 +232,10 @@ def run(argv=None):
             # before calling for CNV, it is necessary to create GATK coverage files , normalize them and do the estimation CNV 
             
             # 1 - GATK coverage average calling            
-            cov_control = c_CoverageControl(l_bams,l_samples,l_ids)
+            cov_control = c_CoverageControl(l_bams,logger)
             cov_control.set_bed_analysis(new_analysis_bed_path)            
             
-            # all the files are generated in coverage/files directory
+            # all the resulting files are generated in coverage/files directory
             path_files = os.path.join(controlCoverage_path,"files") 
             if not os.path.exists(path_files):
                     os.mkdir(path_files)            
@@ -256,9 +244,6 @@ def run(argv=None):
             cov_output = cov_control.perform_coverage_control_gatk(path_files,gatk_path,ref_fasta)
                     
             # 2 - Normalization and 3 - CNV estimation calling (via mod_CNV)
-            
-            #### l_covFiles (*.sample_interval_summary estan en coverage_path/files)
-            #### self.l_samples[index] + "_" + self.l_ids[index] +  "_GATKcoverage" + ".sample_interval_summary"
             
             l_covFiles = []
             for i in cov_output:
@@ -273,8 +258,7 @@ def run(argv=None):
             if (len(aux1) + len(aux2) + len(aux3) == len(l_gender)):
                 
                 logger.info("CNV estimation starts")
-                print l_gender
-                cnv_estimation = mod_CNV.mod_CNV(l_covFiles,ref_fasta,fasta_cnv_path,gatk_path,cnv_output_path,l_gender,panel_id,annotation_file,control_cnv,window_length,0,0)
+                cnv_estimation = mod_CNV.mod_CNV(l_covFiles,ref_fasta,fasta_cnv_path,gatk_path,cnv_output_path,l_gender,annotation_file,logger)
                 cnv_estimation.set_bed_analysis(new_analysis_bed_path)
                 cnv_estimation.perform_cnv()
              
