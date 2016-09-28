@@ -135,6 +135,104 @@ def clean_bed(bed_file,alignment_path):
 
 #######################################################################
 
+def __create_reference_tables(refseq_filename,output_path):
+    
+    ref_annotation_bed  = os.path.join(output_path,os.path.basename(refseq_filename) + str(random.randrange(1,500)) + '.ref.bed')
+    ref_annotation_file = os.path.join(output_path,os.path.basename(refseq_filename)+ str(random.randrange(1,500)) + '.ref.annot')
+    
+    """
+        Columns in the table:
+            hg19.refGene.name    
+            hg19.refGene.chrom    
+            hg19.refGene.strand    
+            hg19.refGene.cdsStart    
+            hg19.refGene.cdsEnd    
+            hg19.refGene.exonCount    
+            hg19.refGene.exonStarts    
+            hg19.refGene.exonEnds    
+            hg19.refGene.name2    
+            hg19.refSeqStatus.status
+            
+        Columns in ref_annotation_file:
+            Chr    
+            txStart    
+            txEnd    
+            exonCount    
+            exonStart    
+            exonEnd    
+            Gene    
+            Refseq
+    """
+    
+    f = open(refseq_filename,'r')
+    l_lines = map(lambda x: x.strip().split('\t'), f.readlines())[1:]
+    f.close()
+    
+    #NM_032291    chr1    +    67000041    67208778    25    66999824,67091529,67098752,67101626,67105459,67108492,67109226,67126195,67133212,67136677,67137626,67138963,67142686,67145360,67147551,67154830,67155872,67161116,67184976,67194946,67199430,67205017,67206340,67206954,67208755    67000051,67091593,67098777,67101698,67105516,67108547,67109402,67126207,67133224,67136702,67137678,67139049,67142779,67145435,67148052,67154958,67155999,67161176,67185088,67195102,67199563,67205220,67206405,67207119,67210768    SGIP1    Validated
+    
+    #select the principal isoform as the largest transcript
+    hash_gene_2_isoform = {} 
+    hash_table          = {}
+    hash_index_gene     = {}
+    
+    for index,line in enumerate(l_lines):
+        
+        refseq_id = line[0]
+        chrm      = line[1]
+        strand    = line[2]
+        cds_start = line[3]
+        cds_end   = line[4]
+        n_exon    = line[5]
+        l_exon_s  = map(int,line[6].split(','))
+        l_exon_e  = map(int,line[7].split(','))
+        gene_name = line[8]
+        
+        if len(l_exon_s) <> len(l_exon_e):
+            raise RuntimeError('coverage_statistics.__create_reference_tables: The number of initial exon coordinates does not agree with the number of end coordinates: %s\n' % (gene_name))
+        if len(l_exon_s) <> int(n_exon):
+            raise RuntimeError('coverage_statistics.__create_reference_tables: The number of exons does not agree with exon_count: %s: %s\n' % (gene_name,n_exon))
+        
+        cs = int(cds_start)
+        ce = int(cds_end)
+        
+        if strand == '+':
+            l_coding_exons = filter(lambda (i,s,e): float(min(e,ce)-max(s,cs))/(e-s)>0, zip(range(1,len(l_exon_s)+1),l_exon_s,l_exon_e))
+        else:
+            l_coding_exons = filter(lambda (i,s,e): float(min(e,ce)-max(s,cs))/(e-s)>0, zip(range(len(l_exon_s)+1,1,-1),l_exon_s,l_exon_e))
+        
+        l_exon_coord = map(lambda (i,s,e): (i,max(s,cs),min(e,ce)), l_coding_exons)
+        
+        hash_gene_2_isoform.setdefault(gene_name,[]).append((sum(map(lambda (i,s,e): (e-s) , l_exon_coord)),refseq_id))
+        hash_table[refseq_id] = (chrm,l_exon_coord,gene_name)
+        hash_index_gene.setdefault(gene_name,[]).append(index)
+        
+    l_genes = map(itemgetter(1),sorted(map(lambda gene: (sorted(hash_index_gene[gene])[0],gene), hash_index_gene.keys())))
+    
+    f_bed   = open(ref_annotation_bed,'w')
+    f_annot = open(ref_annotation_file,'w')
+    
+    f_annot.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" %("Chr","txStart","txEnd","exonCount","exonStart","exonEnd","Gene","Refseq"))
+    for gene_name in l_genes:
+        
+        length_trans,refseq_id = sorted(hash_gene_2_isoform[gene_name],reverse=True)[0]
+        
+        if length_trans == 0:
+            continue
+        
+        (chrm,l_exon_coord,gene_name) = hash_table[refseq_id]
+    
+        f_bed.write('\n'.join(map(lambda (i,s,e): "%s\t%d\t%d\t%s\t%s" % (chrm,s,e,gene_name,refseq_id), l_exon_coord))+'\n')
+        f_annot.write('\n'.join(map(lambda (i,s,e): "%s\t-\t-\t%d\t%d\t%d\t%s\t%s" % (chrm,i,s,e,gene_name,refseq_id), l_exon_coord))+'\n') 
+    
+    f_bed.close()
+    f_annot.close()    
+
+    
+    return ref_annotation_bed,ref_annotation_file
+
+
+#######################################################################
+
 def run(argv=None):
     
     if argv is None: argv = sys.argv    
@@ -224,6 +322,12 @@ def run(argv=None):
                     l_bams.append(abs_path)
                 
             logger.info("CNV estimation will be done in the following files: %s \n" %(l_bams))
+            
+            
+            logger.info("Human genome bed generation, for the annotation process")
+            refseq_filename = "/ingemm/ref/DBs/genes_tables/RefSeq_table.txt"
+            (ref_annotation_bed,ref_annotation_file) = __create_reference_tables(refseq_filename,controlCoverage_path)
+            
             
     
             logger.info("Bed generation")
