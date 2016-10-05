@@ -265,6 +265,7 @@ bed_file <- as.character(options[3])
 gender <- as.character(options[4])
 annotation.file <- as.character(options[5])
 
+
 options(java.parameters = "-Xmx2000m")
 
 #cnv_estimation_individual <- function(case_file,control_file,output_path,sample_names){
@@ -277,6 +278,7 @@ if (!file.exists(bed_file)){
 }
 
 control_files = c()
+
 
 case_files <- strsplit(case_files,";")[[1]]
 
@@ -504,8 +506,10 @@ case_files <- strsplit(case_files,";")[[1]]
 			aux_df <- aux_df[order(as.numeric(as.character(aux_df$Chr)),aux_df$Start),]
 
 		}else{
-			names(aux_df) <- c("Chr","Start","End","Sample","Type","numBases","gain_loss","Ratio (<0.69 loss,1 neutral,>1.5 dup)","Ratio others")
-			aux_df <- aux_df[order(as.numeric(as.character(aux_df$Chr)),aux_df$Start),]
+			if (length(aux_df) != 0){
+				names(aux_df) <- c("Chr","Start","End","Sample","Type","numBases","gain_loss","Ratio (<0.69 loss,1 neutral,>1.5 dup)","Ratio others")
+				aux_df <- aux_df[order(as.numeric(as.character(aux_df$Chr)),aux_df$Start),]
+			}
 		}
 	}else{
 		names(aux_df) <- c("Chr","Start","End","Sample","Type","numBases","gain_loss","Ratio (<0.69 loss,1 neutral,>1.5 dup)","Ratio others")

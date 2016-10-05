@@ -66,7 +66,7 @@ class c_CoverageControl:
                 l_cov.append(fileName)
                 args = ['java','-jar',gatk_path,'-T','DepthOfCoverage','-omitBaseOutput','-omitLocusTable','-R',fasta_file,'-I',i,'-L',self.bed_analysis,'-o',fileName]  
                 self.logger.info("GATK -T DepthOfCoverage -omitBaseOutput -omitLocusTable -R %s -I %s -L %s -o %s" %(fasta_file,i,self.bed_analysis,fileName))
-                #subprocess.Popen(args).wait()
+                subprocess.Popen(args).wait()
                 
             except:
                 raise RuntimeError('mod_CoverageControl.perform_coverage_control_gatk: Error when launching GATK \n %s\t%s' % (sys.exc_info()[0],sys.exc_info()[1]))
